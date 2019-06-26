@@ -1,51 +1,44 @@
-import functools
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 
-# generator+resnet block arch from https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix
+# ref: https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix
 class Generator(nn.Module):
     def __init__(self, in_channels=3, out_channels=3, n_blocks=9):
         super(Generator, self).__init__()
 
-        norm_layer = functools.partial(nn.InstanceNorm2d, affine=False, track_running_stats=False)
-        use_bias = True
-
         model = [nn.ReflectionPad2d(3),
-                 nn.Conv2d(in_channels, 64, kernel_size=7, padding=0, bias=use_bias),
-                 norm_layer(64),
+                 nn.Conv2d(in_channels, 64, 7, bias=True),
+                 nn.InstanceNorm2d(64),
                  nn.ReLU(True)]
 
+        # Add downsampling layers
         n_downsampling = 2
-        for i in range(n_downsampling):  # add downsampling layers
+        for i in range(2):
             mult = 2 ** i
             model += [nn.Conv2d(64 * mult,
                                 64 * mult * 2,
                                 kernel_size=3,
                                 stride=2,
                                 padding=1,
-                                bias=use_bias),
-                      norm_layer(64 * mult * 2),
+                                bias=True),
+                      nn.InstanceNorm2d(64 * mult * 2),
                       nn.ReLU(True)]
 
+        # Add resnet blocks
         mult = 2 ** n_downsampling
-        for i in range(n_blocks):       # add ResNet blocks
+        for i in range(n_blocks):
+            model += [ResnetBlock(64 * mult)]
 
-            model += [ResnetBlock(64 * mult,
-                                  padding_type='reflect',
-                                  norm_layer=norm_layer,
-                                  use_dropout=True,
-                                  use_bias=use_bias)]
-
-        for i in range(n_downsampling):  # add upsampling layers
+        # Add upsampling layers
+        for i in range(n_downsampling):
             mult = 2 ** (n_downsampling - i)
             model += [nn.ConvTranspose2d(64 * mult, int(64 * mult / 2),
                                          kernel_size=3, stride=2,
                                          padding=1, output_padding=1,
-                                         bias=use_bias),
-                      norm_layer(int(64 * mult / 2)),
+                                         bias=True),
+                      nn.InstanceNorm2d(int(64 * mult / 2)),
                       nn.ReLU(True)]
         model += [nn.ReflectionPad2d(3)]
         model += [nn.Conv2d(64, out_channels, kernel_size=7, padding=0)]
@@ -58,71 +51,38 @@ class Generator(nn.Module):
 
 
 class ResnetBlock(nn.Module):
-    """Define a Resnet block"""
 
-    def __init__(self, dim, padding_type, norm_layer, use_dropout, use_bias):
-        """Initialize the Resnet block
-
-        A resnet block is a conv block with skip connections
-        We construct a conv block with build_conv_block function,
-        and implement skip connections in <forward> function.
-        Original Resnet paper: https://arxiv.org/pdf/1512.03385.pdf
-        """
+    def __init__(self, dim):
         super(ResnetBlock, self).__init__()
-        self.conv_block = self.build_conv_block(
-            dim, padding_type, norm_layer, use_dropout, use_bias)
-
-    def build_conv_block(self, dim, padding_type, norm_layer, use_dropout, use_bias):
-        """Construct a convolutional block.
-
-        Parameters:
-            dim (int)           -- the number of channels in the conv layer.
-            padding_type (str)  -- the name of padding layer: reflect | replicate | zero
-            norm_layer          -- normalization layer
-            use_dropout (bool)  -- if use dropout layers.
-            use_bias (bool)     -- if the conv layer uses bias or not
-
-        Returns a block (with a conv layer, a normalization layer, and a non-linearity layer (ReLU))
-        """
-        conv_block = []
-        p = 0
-        conv_block += [nn.ReflectionPad2d(1)]
-
-        conv_block += [nn.Conv2d(dim, dim, kernel_size=3, padding=p,
-                                 bias=use_bias), norm_layer(dim), nn.ReLU(True)]
-        if use_dropout:
-            conv_block += [nn.Dropout(0.5)]
-
-        p = 0
-        conv_block += [nn.ReflectionPad2d(1)]
-        conv_block += [nn.Conv2d(dim, dim, kernel_size=3, padding=0,
-                                 bias=use_bias), norm_layer(dim)]
-
-        return nn.Sequential(*conv_block)
+        model = [
+            nn.ReflectionPad2d(1),
+            nn.Conv2d(dim, dim, 3),
+            nn.InstanceNorm2d(dim),
+            nn.ReLU(inplace=True),
+            nn.ReflectionPad2d(1),
+            nn.Conv2d(dim, dim, 3),
+            nn.InstanceNorm2d(dim)
+        ]
+        self.model = nn.Sequential(*model)
 
     def forward(self, x):
-        """Forward function (with skip connections)"""
-        out = x + self.conv_block(x)  # add skip connections
-        return out
+        return x + self.model(x)  # skip connection
 
 
 class Discriminator(nn.Module):
     def __init__(self, in_channels=3):
         super(Discriminator, self).__init__()
 
-        norm_layer = functools.partial(nn.InstanceNorm2d, affine=False, track_running_stats=False)
-        use_bias = True
-
         model = [
             nn.Conv2d(in_channels, 64, 4, stride=2, padding=1),
             nn.LeakyReLU(0.2, True),
-            nn.Conv2d(64, 256, 4, stride=2, padding=1, bias=use_bias),
-            norm_layer(256),
+            nn.Conv2d(64, 256, 4, stride=2, padding=1, bias=True),
+            nn.InstanceNorm2d(256),
             nn.LeakyReLU(0.2, True),
-            nn.Conv2d(256, 512, 4, stride=2, padding=1, bias=use_bias),
-            norm_layer(512),
+            nn.Conv2d(256, 512, 4, stride=2, padding=1, bias=True),
+            nn.InstanceNorm2d(512),
             nn.LeakyReLU(0.2, True),
-            nn.Conv2d(512, 1, 4, stride=2, padding=1, bias=use_bias),
+            nn.Conv2d(512, 1, 4, stride=2, padding=1, bias=True),
         ]
         self.model = nn.Sequential(*model)
 

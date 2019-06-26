@@ -6,7 +6,7 @@ import numpy as np
 from PIL import Image
 import torch
 import torch.optim as optim
-from torch.utils.tensorboard import SummaryWriter
+from tensorboardX import SummaryWriter
 from torchvision import transforms
 from tqdm import tqdm
 
@@ -23,17 +23,26 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('run_name', type=str)
     parser.add_argument('--data', dest='data_dir', type=str, default='../data/maps')
+
     parser.add_argument('--epochs', type=int, default=200)
     parser.add_argument('--batch-size', dest='batch_size', type=int, default=1)
     parser.add_argument('--lr', type=float, default=1e-2)
     parser.add_argument('--resize', type=int, default=256)
+
+    parser.add_argument('--nil', dest='num_iters_log', type=int, default=50)
+    parser.add_argument('--nes', dest='num_epochs_save', type=int, default=1000)
+    parser.add_argument('--nee', dest='num_epochs_eval', type=int, default=1000)
+
     parser.add_argument('--identity-loss', dest='identity_loss', action='store_true')
+    parser.add_argument('--lr-decay', dest='lr_decay', action='store_true')
+    parser.add_argument('--gen-buffer', dest='gen_buffer', action='store_true')
+
     parser.add_argument('--ckpt-dir', dest='ckpt_dir', type=str, default='ckpt')
     parser.add_argument('--log-dir', dest='log_dir', type=str, default='tb')
-    parser.add_argument('--nes', dest='num_epochs_save', type=int, default=1000)
     parser.add_argument('--seed', type=int, default=111)
     parser.add_argument('--use-cpu', dest='use_cpu', action='store_true')
     parser.add_argument('--gpu-ids', dest='gpu_ids', type=str, default='0')
+
     return parser.parse_args()
 
 
@@ -70,7 +79,6 @@ if __name__ == '__main__':
     nets = [G, F, D_A, D_B]
     for net in nets:
         net.apply(init_weights_gaussian)
-        net.train()
 
     G_opt = optim.Adam(G.parameters(), lr=args.lr)
     F_opt = optim.Adam(F.parameters(), lr=args.lr)
@@ -78,7 +86,13 @@ if __name__ == '__main__':
     D_B_opt = optim.Adam(D_B.parameters(), lr=args.lr)
     opts = [G_opt, F_opt, D_A_opt, D_B_opt]
 
+    itrs = 0
+    test_itrs = 0
     for epoch in range(args.epochs):
+
+        # train
+        for net in nets:
+            net.train()
         with tqdm(train_loader,
                   unit_scale=args.batch_size,
                   dynamic_ncols=True,
@@ -106,5 +120,37 @@ if __name__ == '__main__':
                 D_A_opt.step()
                 D_B_opt.step()
 
-                pbar.set_postfix(gen_loss=gen_loss.detach().item(),
-                                 disc_loss=disc_loss.detach().item())
+                gen_loss, disc_loss = gen_loss.detach().item(), disc_loss.detach().item()
+                pbar.set_postfix(gen_loss=gen_loss, disc_loss=disc_loss)
+                logger.add_scalar('gen_loss', gen_loss, itrs)
+                logger.add_scalar('disc_loss', disc_loss, itrs)
+
+                if (itrs + 1) % args.num_iters_log == 0:
+                    logger.add_images('train_images', torch.cat([x_A, fake_B, x_B, fake_A]), itrs)
+
+                itrs += 1
+
+        # test
+        if (epoch + 1) % args.num_epochs_eval == 0:
+            G.eval()
+            F.eval()
+            with tqdm(test_loader,
+                      unit_scale=args.batch_size,
+                      dynamic_ncols=True,
+                      desc='Eval') as pbar:
+                for batch_idx, (x_A, x_B) in enumerate(pbar):
+                    if (test_itrs + 1) % args.num_iters_log == 0:
+                        x_A, x_B = x_A.to(device), x_B.to(device)
+                        fake_A, fake_B = F(x_B), G(x_A)
+                        logger.add_images('test_images',
+                                          torch.cat([x_A, fake_B, x_B, fake_A]),
+                                          test_itrs)
+                    test_itrs += 1
+
+        # save
+        if (epoch + 1) % args.num_epochs_save == 0:
+            torch.save({
+                'epoch': epoch,
+                'model_state_dicts': [net.state_dict() for net in nets],
+                'opt_state_dicts': [opt.state_dict() for opt in opts]
+            }, os.path.join(ckpt_dir, '{}.tar'.format(epoch)))
