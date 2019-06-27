@@ -17,6 +17,7 @@ from networks import (Discriminator,
                       gen_cyc_loss,
                       gen_gan_loss,
                       init_weights_gaussian)
+from util import ImageBuffer
 
 
 def parse_args():
@@ -86,6 +87,8 @@ if __name__ == '__main__':
     D_B_opt = optim.Adam(D_B.parameters(), lr=args.lr)
     opts = [G_opt, F_opt, D_A_opt, D_B_opt]
 
+    G_buffer, F_buffer = ImageBuffer(50), ImageBuffer(50)
+
     itrs = 0
     test_itrs = 0
     for epoch in range(args.epochs):
@@ -114,6 +117,9 @@ if __name__ == '__main__':
 
                 # train discriminators
                 fake_A, fake_B = fake_A.detach(), fake_B.detach()
+                if args.gen_buffer:  # sample from history of generated images
+                    fake_B = G_buffer.insert_and_sample(fake_B.clone(), args.batch_size)
+                    fake_A = F_buffer.insert_and_sample(fake_A.clone(), args.batch_size)
                 disc_loss = disc_gan_loss(D_A(x_A), D_A(fake_A)) + \
                     disc_gan_loss(D_B(x_B), D_B(fake_B))
                 disc_loss.backward()
