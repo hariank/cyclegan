@@ -91,7 +91,7 @@ if __name__ == '__main__':
 
     itrs = 0
     test_itrs = 0
-    for epoch in range(args.epochs):
+    for epoch in range(1, args.epochs + 1):
 
         # train
         for net in nets:
@@ -108,7 +108,7 @@ if __name__ == '__main__':
 
                 # train generators
                 fake_A, fake_B = F(x_B), G(x_A)
-                gan_loss = gen_gan_loss(fake_A) + gen_gan_loss(fake_B)
+                gan_loss = gen_gan_loss(D_A(fake_A)) + gen_gan_loss(D_B(fake_B))
                 cyc_loss = gen_cyc_loss(F(fake_B), x_A) + gen_cyc_loss(G(fake_A), x_B)
                 gen_loss = gan_loss + 10. * cyc_loss
                 gen_loss.backward()
