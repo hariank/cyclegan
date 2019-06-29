@@ -110,3 +110,7 @@ def disc_gan_loss(real_score, fake_score):
 
 def gen_cyc_loss(original, reconstructed):
     return F.l1_loss(original, reconstructed)
+
+
+def gen_identity_loss(original, mapped):
+    return F.l1_loss(original, mapped)

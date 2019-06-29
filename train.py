@@ -16,6 +16,7 @@ from networks import (Discriminator,
                       disc_gan_loss,
                       gen_cyc_loss,
                       gen_gan_loss,
+                      gen_identity_loss,
                       init_weights_gaussian)
 from util import ImageBuffer
 
@@ -110,7 +111,11 @@ if __name__ == '__main__':
                 fake_A, fake_B = F(x_B), G(x_A)
                 gan_loss = gen_gan_loss(D_A(fake_A)) + gen_gan_loss(D_B(fake_B))
                 cyc_loss = gen_cyc_loss(F(fake_B), x_A) + gen_cyc_loss(G(fake_A), x_B)
-                gen_loss = gan_loss + 10. * cyc_loss
+                if args.identity_loss:
+                    gen_loss = gen_identity_loss(x_B, G(x_B)) + gen_identity_loss(x_A, F(x_A))
+                else:
+                    gen_loss = 0.
+                gen_loss += gan_loss + 10. * cyc_loss
                 gen_loss.backward()
                 G_opt.step()
                 F_opt.step()
