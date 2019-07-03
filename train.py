@@ -28,15 +28,14 @@ def parse_args():
 
     parser.add_argument('--epochs', type=int, default=200)
     parser.add_argument('--batch-size', dest='batch_size', type=int, default=1)
-    parser.add_argument('--lr', type=float, default=1e-2)
+    parser.add_argument('--lr', type=float, default=.0002)
     parser.add_argument('--resize', type=int, default=256)
 
-    parser.add_argument('--nil', dest='num_iters_log', type=int, default=50)
-    parser.add_argument('--nes', dest='num_epochs_save', type=int, default=1000)
-    parser.add_argument('--nee', dest='num_epochs_eval', type=int, default=1000)
+    parser.add_argument('--nil', dest='num_iters_log', type=int, default=365)
+    parser.add_argument('--nes', dest='num_epochs_save', type=int, default=1)
+    parser.add_argument('--nee', dest='num_epochs_eval', type=int, default=1)
 
     parser.add_argument('--identity-loss', dest='identity_loss', action='store_true')
-    parser.add_argument('--lr-decay', dest='lr_decay', action='store_true')
     parser.add_argument('--gen-buffer', dest='gen_buffer', action='store_true')
 
     parser.add_argument('--ckpt-dir', dest='ckpt_dir', type=str, default='ckpt')
